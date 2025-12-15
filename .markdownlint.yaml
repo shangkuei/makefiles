@@ -1,0 +1,32 @@
+# Markdownlint configuration
+# See https://github.com/DavidAnson/markdownlint for rule documentation
+
+# Default state for all rules
+default: true
+
+# MD013 - Line length
+# Disable line length limit for flexibility
+MD013: false
+
+# MD024 - Multiple headings with the same content
+# Allow duplicate headings in different sections (siblings only)
+MD024:
+  siblings_only: true
+
+# MD033 - Inline HTML
+# Allow HTML elements (needed for badges, etc.)
+MD033: false
+
+# MD041 - First line in file should be a top level heading
+# Ensure files start with H1
+MD041: true
+
+# MD046 - Code block style
+# Enforce fenced code blocks
+MD046:
+  style: fenced
+
+# MD048 - Code fence style
+# Use backticks for code fences
+MD048:
+  style: backtick
