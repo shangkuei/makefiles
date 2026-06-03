@@ -1,0 +1,5 @@
+{
+  "name": "makefiles-operations",
+  "version": "1.0.0",
+  "description": "Skills for scaffolding and guiding infrastructure operations using shared Makefile includes (SOPS, Terraform, Helm, Talos, Docker Compose)"
+}
