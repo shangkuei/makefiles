@@ -1,27 +1,30 @@
 # Shared Makefiles
 
-> Reusable Makefile includes for standardized infrastructure operations with SOPS encryption
+> Reusable Makefile and justfile includes for standardized infrastructure operations with SOPS encryption
 
 [![SOPS](https://img.shields.io/badge/SOPS-age_encryption-326CE5)](https://github.com/getsops/sops)
 [![Terraform](https://img.shields.io/badge/Terraform-IaC-623CE4?logo=terraform)](https://www.terraform.io/)
 [![Helm](https://img.shields.io/badge/Helm-Charts-0F1689?logo=helm)](https://helm.sh/)
 [![Talos](https://img.shields.io/badge/Talos-Kubernetes-FF6600)](https://www.talos.dev/)
+[![just](https://img.shields.io/badge/just-command_runner-4B8BBE)](https://github.com/casey/just)
 
 ## Overview
 
-This repository contains shared Makefile includes that provide standardized operations across infrastructure repositories. It is designed to be used as a **git submodule** for consistent tooling across projects.
+This repository contains shared Makefile (`.mk`) and justfile (`.just`) includes that provide standardized operations across infrastructure repositories. Both formats offer the same capabilities and are designed to be used as a **git submodule** for consistent tooling across projects.
 
 ## Available Includes
 
-| Makefile | Dependencies | Purpose |
-|----------|--------------|---------|
-| `sops.mk` | None | Base SOPS operations, color definitions |
-| `terraform.mk` | sops.mk | Terraform with SOPS integration |
-| `helm.mk` | sops.mk | Helm chart management |
-| `talos.mk` | sops.mk, terraform.mk | Talos cluster operations |
-| `docker-compose.mk` | sops.mk | Docker Compose with SOPS |
+| Module | Make | Just | Dependencies | Purpose |
+|--------|------|------|--------------|---------|
+| sops | `sops.mk` | `sops.just` | None | Base SOPS operations, color definitions |
+| terraform | `terraform.mk` | `terraform.just` | sops | Terraform with SOPS integration |
+| helm | `helm.mk` | `helm.just` | sops | Helm chart management |
+| talos | `talos.mk` | `talos.just` | sops, terraform | Talos cluster operations |
+| docker-compose | `docker-compose.mk` | `docker-compose.just` | sops | Docker Compose with SOPS |
 
 ## Usage
+
+### Makefile Format
 
 Include the shared makefiles in your domain Makefile. **sops.mk must always be included first** as it provides color definitions and base targets used by all other makefiles.
 
@@ -39,6 +42,35 @@ include ../../../makefiles/docker-compose.mk # Depends on sops.mk
 
 # Your domain-specific targets follow...
 ```
+
+### Justfile Format
+
+Import the shared justfiles in your consumer `justfile`. **sops.just must always be imported first**. The consumer defines required variables; shared modules define optional variables with `env()` defaults.
+
+```just
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# Required variables (defined only in consumer)
+sops_domain := "terraform"
+sops_env_name := "my-environment"
+
+# Import shared operations (order matters)
+import '../../../makefiles/sops.just'           # Must be first
+import '../../../makefiles/terraform.just'      # Depends on sops.just
+import '../../../makefiles/helm.just'           # Depends on sops.just
+import '../../../makefiles/talos.just'          # Depends on sops.just + terraform.just
+import '../../../makefiles/docker-compose.just' # Depends on sops.just
+
+# Your domain-specific recipes follow...
+```
+
+**Key differences from Makefile format:**
+
+- `set shell` must only be defined in the consumer justfile, never in shared modules
+- Required variables are plain assignments (e.g., `sops_domain := "terraform"`)
+- Optional variables in shared modules use `env("VAR", "default")` for overridability
+- Recipes use positional parameters instead of `VAR=value` syntax
+- Use `just <recipe>` instead of `make <target>`
 
 ## sops.mk Reference
 
@@ -82,6 +114,12 @@ make sops-export-public                    # Export public key for sharing
 make sops-rotate-key                       # Show key rotation procedure
 ```
 
+Justfile equivalent:
+
+```bash
+just sops-import-key /path    # Positional parameter instead of VAR=value
+```
+
 #### Tier 3: Encryption Operations
 
 ```bash
@@ -90,6 +128,12 @@ make sops-decrypt FILE=secrets.yaml    # Decrypt file to stdout
 make sops-edit FILE=secrets.yaml       # Edit encrypted file
 make sops-rekey FILE=secrets.yaml      # Re-encrypt with current config
 make sops-clean                        # Remove temporary/decrypted files
+```
+
+Justfile equivalent:
+
+```bash
+just sops-encrypt secrets.yaml    # Positional parameter instead of FILE=value
 ```
 
 ### Key Strategies
@@ -179,7 +223,16 @@ make tf-edit-tfvars      # Edit encrypted terraform.tfvars
 make tf-sops-validate    # Validate encrypted Terraform files
 ```
 
+### Terraform Justfile Command Syntax
+
+```bash
+just tf-plan -target=module.foo    # Supports extra args passed to terraform
+just tf-apply                      # Apply changes
+```
+
 ### Terraform Usage Example
+
+**Makefile:**
 
 ```makefile
 # SOPS configuration
@@ -196,6 +249,20 @@ include ../../../makefiles/sops.mk
 include ../../../makefiles/terraform.mk
 
 # Environment-specific targets can be added below...
+```
+
+**Justfile:**
+
+```just
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+sops_domain := "terraform"
+sops_env_name := "my-environment"
+
+import '../../../makefiles/sops.just'
+import '../../../makefiles/terraform.just'
+
+# Environment-specific recipes can be added below...
 ```
 
 ## helm.mk Reference
@@ -251,7 +318,16 @@ make helm-help                           # Show help
 
 cilium, jetstack, ingress-nginx, prometheus-community, grafana, bitnami, argo, openebs, longhorn, metallb, traefik, hashicorp, external-secrets
 
+### Helm Justfile Command Syntax
+
+```bash
+just helm-install cilium cilium-values.yaml kube-system 1.16.0    # Positional params
+just helm-list all                                                  # List all namespaces
+```
+
 ### Helm Usage Example
+
+**Makefile:**
 
 ```makefile
 SOPS_DOMAIN := terraform
@@ -263,6 +339,21 @@ include ../../../makefiles/helm.mk
 
 # Install with pre-configured repository auto-detection
 # make helm-install chart=cilium values=cilium-values.yaml ns=kube-system
+```
+
+**Justfile:**
+
+```just
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+sops_domain := "terraform"
+sops_env_name := "talos-cluster-dev"
+kubeconfig := "generated/kubeconfig"
+
+import '../../../makefiles/sops.just'
+import '../../../makefiles/helm.just'
+
+# just helm-install cilium cilium-values.yaml kube-system
 ```
 
 ## talos.mk Reference
@@ -315,7 +406,16 @@ make talos-reboot NODE=ip [INSECURE=true]               # Reboot node
 make talos-reset NODE=ip [INSECURE=true]                # Reset node (destructive)
 ```
 
+### Talos Justfile Command Syntax
+
+```bash
+just talos-apply node1 true auto    # Positional: node, insecure, mode
+just talos-dashboard node1 true     # Positional: node, insecure
+```
+
 ### Talos Usage Example
+
+**Makefile:**
 
 ```makefile
 SOPS_DOMAIN := terraform
@@ -327,6 +427,21 @@ include ../../../makefiles/terraform.mk
 include ../../../makefiles/talos.mk
 
 # Workflow: make tf-apply → make talos-apply → make talos-bootstrap → make talos-kubeconfig
+```
+
+**Justfile:**
+
+```just
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+sops_domain := "terraform"
+sops_env_name := "talos-cluster-dev"
+
+import '../../../makefiles/sops.just'
+import '../../../makefiles/terraform.just'
+import '../../../makefiles/talos.just'
+
+# Workflow: just tf-apply → just talos-apply → just talos-bootstrap → just talos-kubeconfig
 ```
 
 ## docker-compose.mk Reference
@@ -366,7 +481,17 @@ make dc-help                       # Show help
 
 Short aliases are also available: `env`, `config`, `up`, `down`, `logs`, `ps`, `restart`, `pull`.
 
+### Docker Compose Justfile Command Syntax
+
+```bash
+just up                       # Short alias for dc-up
+just down                     # Short alias for dc-down
+just dc-exec app bash         # Positional: service, command
+```
+
 ### Docker Compose Usage Example
+
+**Makefile:**
 
 ```makefile
 SERVICE_NAME := immich
@@ -380,6 +505,21 @@ SOPS_KEY_STRATEGY := local
 
 include ../../../../makefiles/sops.mk
 include ../../../../makefiles/docker-compose.mk
+```
+
+**Justfile:**
+
+```just
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+sops_domain := "docker"
+sops_env_name := "immich-unraid"
+service_name := "immich"
+base_compose := "../../../base/immich/docker-compose.yml"
+env_enc := ".enc.env"
+
+import '../../../../makefiles/sops.just'
+import '../../../../makefiles/docker-compose.just'
 ```
 
 ## Domain-Specific Extensions
@@ -490,6 +630,8 @@ Domain Makefiles should define their own aliases for domain-specific targets (e.
 
 ### Naming
 
+**Makefile variables** use `UPPER_SNAKE_CASE`:
+
 | Scope | Prefix | Examples |
 |-------|--------|----------|
 | SOPS variables | `SOPS_*` | `SOPS_DOMAIN`, `SOPS_ENV_NAME` |
@@ -498,15 +640,31 @@ Domain Makefiles should define their own aliases for domain-specific targets (e.
 | Talos variables | `TALOS_*` | `TALOS_WAIT_TIMEOUT` |
 | Docker Compose variables | `DC_*` | `DC_PROJECT_NAME` |
 | Internal (private) | `_SOPS_*` | `_SOPS_RED`, `_SOPS_OK` (do not override) |
-| SOPS targets | `sops-*` | `sops-keygen`, `sops-encrypt` |
-| Terraform targets | `tf-*` | `tf-init`, `tf-plan` |
-| Helm targets | `helm-*` | `helm-install`, `helm-list` |
-| Talos targets | `talos-*` | `talos-apply`, `talos-health` |
-| Docker Compose targets | `dc-*` | `dc-up`, `dc-down` |
 
-Every makefile must provide a `<prefix>-help` target.
+**Justfile variables** use `lower_snake_case`:
 
-### Code Style
+| Scope | Prefix | Examples |
+|-------|--------|----------|
+| SOPS variables | `sops_*` | `sops_domain`, `sops_env_name` |
+| Terraform variables | `tf_*` | `tf_tfvars_enc`, `tf_auto_init` |
+| Helm variables | `helm_*` | `helm_wait`, `helm_timeout` |
+| Talos variables | `talos_*` | `talos_wait_timeout` |
+| Docker Compose variables | `dc_*` | `dc_project_name` |
+| Internal (private) | `_sops_*` | `_sops_red`, `_sops_ok` (do not override) |
+
+**Targets/recipes** share the same names across both formats:
+
+| Module | Prefix | Examples |
+|--------|--------|----------|
+| SOPS | `sops-*` | `sops-keygen`, `sops-encrypt` |
+| Terraform | `tf-*` | `tf-init`, `tf-plan` |
+| Helm | `helm-*` | `helm-install`, `helm-list` |
+| Talos | `talos-*` | `talos-apply`, `talos-health` |
+| Docker Compose | `dc-*` | `dc-up`, `dc-down` |
+
+Every module must provide a `<prefix>-help` recipe/target.
+
+### Makefile Code Style
 
 - Use `@` prefix to suppress command echo for clean output
 - Use `$$(...)` for command substitution (not backticks)
@@ -515,6 +673,19 @@ Every makefile must provide a `<prefix>-help` target.
 - Use status indicators for check results: `_SOPS_OK`, `_SOPS_FAIL`, `_SOPS_WARN`
 - Check required variables at the top of targets with helpful error messages
 - Use `exit 1` for errors, `exit 0` for successful early returns
+
+### Justfile Code Style
+
+- Use shebang recipes (`#!/usr/bin/env bash`) for multi-line shell logic
+- Use `[private]` attribute for helper recipes (prefixed with `_`)
+- Use `[group("module")]` attributes to organize `just --list` output
+- Use `[confirm]` attribute for destructive operations
+- Define `set shell` only in the consumer justfile, never in shared modules
+- Required variables: defined only in consumer (no default)
+- Optional variables: defined only in shared module with `env("VAR", "default")`
+- Use `{{ var }}` interpolation (with spaces per `just --fmt`)
+- Use `alias name := recipe` for short aliases
+- Run `just --fmt --justfile <file>` to enforce canonical formatting
 
 ### Secure Patterns
 
@@ -574,16 +745,19 @@ pre-commit run
 - **check-yaml**: Validate YAML syntax
 - **check-merge-conflict**: Detect merge conflict markers
 - **markdownlint**: Lint markdown files against configured rules
+- **just-fmt**: Check justfile formatting (requires `just` installed)
 
 ## Contributing
 
-1. Read existing patterns in the target makefile before adding new ones
+1. Read existing patterns in the target makefile/justfile before adding new ones
 2. Follow naming conventions and code style documented above
-3. Maintain include order dependencies (sops.mk first)
-4. Update `-help` targets when adding new functionality
-5. Update this README for user-facing changes
-6. Test with `make -n <target>` dry-run
-7. Run `pre-commit run --all-files` before committing
+3. Maintain include/import order dependencies (sops first)
+4. Update `-help` recipes/targets when adding new functionality
+5. Keep both `.mk` and `.just` formats in sync during dual-maintenance period
+6. Update this README for user-facing changes
+7. Test with `make -n <target>` or `just --dry-run --justfile <file> <recipe>`
+8. Run `just --fmt --justfile <file>` for justfile formatting
+9. Run `pre-commit run --all-files` before committing
 
 ## Related Documentation
 

@@ -24,3 +24,13 @@ repos:
     hooks:
       - id: markdownlint
         args: [--config, .markdownlint.yaml]
+
+  # Justfile formatting
+  - repo: local
+    hooks:
+      - id: just-fmt
+        name: just fmt
+        language: system
+        entry: sh -c 'for f in "$@"; do just --fmt --check --justfile "$f"; done'
+        files: '\.just$|^justfile$'
+        pass_filenames: true
