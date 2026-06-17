@@ -51,7 +51,6 @@ Import the shared justfiles in your consumer `justfile`. **sops.just must always
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Required variables (defined only in consumer)
-sops_domain := "terraform"
 sops_env_name := "my-environment"
 
 # Import shared operations (order matters)
@@ -67,7 +66,7 @@ import '../../../makefiles/docker-compose.just' # Depends on sops.just
 **Key differences from Makefile format:**
 
 - `set shell` must only be defined in the consumer justfile, never in shared modules
-- Required variables are plain assignments (e.g., `sops_domain := "terraform"`)
+- Required variables are plain assignments (e.g., `sops_env_name := "my-env"`)
 - Optional variables in shared modules use `env("VAR", "default")` for overridability
 - Recipes use positional parameters instead of `VAR=value` syntax
 - Use `just <recipe>` instead of `make <target>`
@@ -256,7 +255,6 @@ include ../../../makefiles/terraform.mk
 ```just
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-sops_domain := "terraform"
 sops_env_name := "my-environment"
 
 import '../../../makefiles/sops.just'
@@ -346,7 +344,6 @@ include ../../../makefiles/helm.mk
 ```just
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-sops_domain := "terraform"
 sops_env_name := "talos-cluster-dev"
 kubeconfig := "generated/kubeconfig"
 
@@ -409,8 +406,11 @@ make talos-reset NODE=ip [INSECURE=true]                # Reset node (destructiv
 ### Talos Justfile Command Syntax
 
 ```bash
-just talos-apply node1 true auto    # Positional: node, insecure, mode
-just talos-dashboard node1 true     # Positional: node, insecure
+# Positional node + variadic flags passed straight through to talosctl:
+just talos-apply node1 --insecure --mode=reboot
+just talos-dashboard node1 --insecure
+just talos-apply node1,node2 --insecure   # comma-separated nodes
+just talos-apply all --insecure           # "all" (the default) = every node
 ```
 
 ### Talos Usage Example
@@ -434,7 +434,6 @@ include ../../../makefiles/talos.mk
 ```just
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-sops_domain := "terraform"
 sops_env_name := "talos-cluster-dev"
 
 import '../../../makefiles/sops.just'
@@ -512,7 +511,6 @@ include ../../../../makefiles/docker-compose.mk
 ```just
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-sops_domain := "docker"
 sops_env_name := "immich-unraid"
 service_name := "immich"
 base_compose := "../../../base/immich/docker-compose.yml"
@@ -645,7 +643,7 @@ Domain Makefiles should define their own aliases for domain-specific targets (e.
 
 | Scope | Prefix | Examples |
 |-------|--------|----------|
-| SOPS variables | `sops_*` | `sops_domain`, `sops_env_name` |
+| SOPS variables | `sops_*` | `sops_env_name` |
 | Terraform variables | `tf_*` | `tf_tfvars_enc`, `tf_auto_init` |
 | Helm variables | `helm_*` | `helm_wait`, `helm_timeout` |
 | Talos variables | `talos_*` | `talos_wait_timeout` |

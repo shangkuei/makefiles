@@ -10,7 +10,7 @@
 #     import '../../../makefiles/terraform.just'
 #
 # Required (from sops.just):
-#   sops_domain, sops_env_name, sops_age_key_file
+#   sops_env_name, sops_age_key_file
 #
 # Optional variables (override via environment):
 #   TF_TFVARS_ENC      - Encrypted tfvars filename (default: terraform.tfvars.enc)
@@ -42,19 +42,19 @@ tf_generated_dir := env("TF_GENERATED_DIR", "generated")
 
 # Initialize Terraform with encrypted backend support
 [group("terraform")]
-tf-init:
+tf-init *args:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "{{ _sops_blue }}==> Initializing Terraform{{ _sops_nc }}"
     if [ -f "{{ tf_backend_enc }}" ]; then
         echo "{{ _sops_blue }}==> Using encrypted backend: {{ tf_backend_enc }}{{ _sops_nc }}"
-        SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops exec-file "{{ tf_backend_enc }}" 'terraform init -backend-config={}'
+        SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops exec-file "{{ tf_backend_enc }}" 'terraform init {{ args }} -backend-config={}'
     elif [ -f "{{ tf_backend_hcl }}" ]; then
         echo "{{ _sops_yellow }}==> Using plaintext backend: {{ tf_backend_hcl }}{{ _sops_nc }}"
-        terraform init -backend-config="{{ tf_backend_hcl }}"
+        terraform init {{ args }} -backend-config="{{ tf_backend_hcl }}"
     else
         echo "{{ _sops_yellow }}==> No backend config, using local state{{ _sops_nc }}"
-        terraform init
+        terraform init {{ args }}
     fi
 
 # Generate Terraform execution plan
@@ -175,8 +175,9 @@ tf-encrypt-tfvars: sops-check-deps sops-check-config
     echo "{{ _sops_yellow }}Next:{{ _sops_nc }} rm {{ tf_tfvars_plain }}"
 
 # Edit encrypted backend.hcl
+[arg('editor', long='editor')]
 [group("terraform")]
-tf-edit-backend: sops-check-deps
+tf-edit-backend editor=sops_editor: sops-check-deps
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -f "{{ tf_backend_enc }}" ]; then
@@ -186,11 +187,12 @@ tf-edit-backend: sops-check-deps
         exit 1
     fi
     echo "{{ _sops_blue }}==> Editing {{ tf_backend_enc }}{{ _sops_nc }}"
-    EDITOR="{{ sops_editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ tf_backend_enc }}"
+    EDITOR="{{ editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ tf_backend_enc }}"
 
 # Edit encrypted terraform.tfvars
+[arg('editor', long='editor')]
 [group("terraform")]
-tf-edit-tfvars: sops-check-deps
+tf-edit-tfvars editor=sops_editor: sops-check-deps
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -f "{{ tf_tfvars_enc }}" ]; then
@@ -200,7 +202,7 @@ tf-edit-tfvars: sops-check-deps
         exit 1
     fi
     echo "{{ _sops_blue }}==> Editing {{ tf_tfvars_enc }}{{ _sops_nc }}"
-    EDITOR="{{ sops_editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ tf_tfvars_enc }}"
+    EDITOR="{{ editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ tf_tfvars_enc }}"
 
 # Validate encrypted Terraform files
 [group("terraform")]

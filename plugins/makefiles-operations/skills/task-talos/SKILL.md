@@ -75,7 +75,7 @@ Show the user:
    - **Maintenance**: `talos-upgrade-k8s`, `talos-upgrade`, `talos-dashboard`, `talos-logs`, `talos-reboot`, `talos-reset`
 3. Command syntax based on detected format:
    - Make: `make talos-apply NODE=foo INSECURE=true MODE=auto`
-   - Just: `just talos-apply foo true auto`
+   - Just: `just talos-apply foo --insecure --mode=auto` (node positional; extra flags pass through to talosctl)
 4. Typical deployment workflow:
    1. `tf-init` → `tf-plan` → `tf-apply`
    2. `talos-apply` with insecure for initial setup

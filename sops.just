@@ -9,7 +9,6 @@
 #     import '../../../makefiles/sops.just'
 #
 # Required variables (define in consumer justfile before import):
-#   sops_domain     - Domain identifier (terraform|kubernetes|docker)
 #   sops_env_name   - Environment name for key naming
 #
 # Optional variables (override via environment):
@@ -137,7 +136,6 @@ sops-info: sops-check-deps
     echo ""
     echo "{{ _sops_bold }}SOPS Configuration{{ _sops_nc }}"
     echo "==============================================="
-    echo "Domain:         {{ sops_domain }}"
     echo "Environment:    {{ sops_env_name }}"
     echo "Key Strategy:   {{ sops_key_strategy }}"
     echo "Key File:       {{ sops_age_key_file }}"
@@ -438,16 +436,17 @@ sops-decrypt file: sops-check-deps
     SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops --decrypt "{{ file }}"
 
 # Edit encrypted file
+[arg('editor', long='editor')]
 [arg('file', long='file')]
 [group("sops")]
-sops-edit file: sops-check-deps
+sops-edit file editor=sops_editor: sops-check-deps
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -f "{{ file }}" ]; then
         echo "{{ _sops_red }}Error: File not found: {{ file }}{{ _sops_nc }}"
         exit 1
     fi
-    EDITOR="{{ sops_editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ file }}"
+    EDITOR="{{ editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ file }}"
 
 # Re-encrypt file with current config
 [arg('file', long='file')]

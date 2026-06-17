@@ -29,12 +29,9 @@ talos_wait_timeout := env("TALOS_WAIT_TIMEOUT", "10m")
 # Cluster Deployment
 # ============================================================================
 
-# Apply Talos configs ([node] [insecure] [mode])
-[arg('insecure', long='insecure')]
-[arg('mode', long='mode')]
-[arg('node', long='node')]
+# Apply Talos configs (node, comma-separated nodes, or "all"; extra flags like --insecure --mode=reboot pass through to talosctl)
 [group("talos")]
-talos-apply node="" insecure="" mode="":
+talos-apply nodes="all" *flags:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ ! -d "{{ generated_dir }}" ]; then
@@ -46,48 +43,34 @@ talos-apply node="" insecure="" mode="":
         exit 1
     fi
     export TALOSCONFIG="{{ talosconfig }}"
-    INSECURE_FLAG=""
-    MODE_FLAG=""
-    if [ "{{ insecure }}" = "true" ]; then
-        INSECURE_FLAG="--insecure"
-        echo "{{ _sops_yellow }}==> Using --insecure mode for initial setup{{ _sops_nc }}"
+    if [ -n "{{ flags }}" ]; then
+        echo "{{ _sops_yellow }}==> Passing extra talosctl flags: {{ flags }}{{ _sops_nc }}"
     fi
-    if [ -n "{{ mode }}" ]; then
-        case "{{ mode }}" in
-            auto|reboot|no-reboot|staged)
-                MODE_FLAG="--mode={{ mode }}"
-                echo "{{ _sops_yellow }}==> Using --mode={{ mode }}{{ _sops_nc }}"
-                ;;
-            *)
-                echo "{{ _sops_red }}Error: Invalid mode '{{ mode }}'. Valid options: auto, reboot, no-reboot, staged{{ _sops_nc }}"
-                exit 1
-                ;;
-        esac
-    fi
-    if [ -n "{{ node }}" ]; then
-        echo "{{ _sops_blue }}Applying configuration to node: {{ node }}{{ _sops_nc }}"
-        if [ -f "{{ generated_dir }}/control-plane-{{ node }}.yaml" ]; then
+    apply_node() {
+        local node="$1"
+        local NODE_TYPE BASE_CONFIG NODE_IP OUTPUT_KEY PATCH_FILES PATCH_ARGS patch
+        if [ -f "{{ generated_dir }}/control-plane-$node.yaml" ]; then
             NODE_TYPE="control-plane"
-            BASE_CONFIG="{{ generated_dir }}/control-plane-{{ node }}.yaml"
-        elif [ -f "{{ generated_dir }}/worker-{{ node }}.yaml" ]; then
+            BASE_CONFIG="{{ generated_dir }}/control-plane-$node.yaml"
+        elif [ -f "{{ generated_dir }}/worker-$node.yaml" ]; then
             NODE_TYPE="worker"
-            BASE_CONFIG="{{ generated_dir }}/worker-{{ node }}.yaml"
+            BASE_CONFIG="{{ generated_dir }}/worker-$node.yaml"
         else
-            echo "{{ _sops_red }}Error: No configuration found for node '{{ node }}'{{ _sops_nc }}"
+            echo "{{ _sops_red }}Error: No configuration found for node '$node'{{ _sops_nc }}"
             echo "{{ _sops_yellow }}Available nodes:{{ _sops_nc }}"
             ls -1 {{ generated_dir }}/*-*.yaml 2>/dev/null | grep -E '(control-plane|worker)-[^-]+\.yaml$' | sed 's/.*\/\(control-plane\|worker\)-\(.*\)\.yaml/  \2/' | sort -u
-            exit 1
+            return 1
         fi
         echo "{{ _sops_blue }}==> Node type: $NODE_TYPE{{ _sops_nc }}"
         OUTPUT_KEY=$(echo "$NODE_TYPE" | sed 's/-/_/g')
-        NODE_IP=$(terraform output -json generated_configs 2>/dev/null | jq -r ".[\"$OUTPUT_KEY\"][\"{{ node }}\"].physical_ip // \"\"" || echo "")
+        NODE_IP=$(terraform output -json generated_configs 2>/dev/null | jq -r ".[\"$OUTPUT_KEY\"][\"$node\"].physical_ip // \"\"" || echo "")
         if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "null" ]; then
             echo "{{ _sops_yellow }}==> Could not determine node IP from terraform output{{ _sops_nc }}"
-            read -p "Enter node IP address: " NODE_IP
+            read -p "Enter node IP address for $node: " NODE_IP
         fi
         echo "{{ _sops_blue }}==> Applying to: $NODE_IP{{ _sops_nc }}"
         echo "{{ _sops_blue }}==> Base config: $BASE_CONFIG{{ _sops_nc }}"
-        PATCH_FILES=$(find {{ generated_dir }} -name "$NODE_TYPE-{{ node }}-*.yaml" ! -name "$NODE_TYPE-{{ node }}.yaml" | sort)
+        PATCH_FILES=$(find {{ generated_dir }} -name "$NODE_TYPE-$node-*.yaml" ! -name "$NODE_TYPE-$node.yaml" | sort)
         PATCH_ARGS=""
         if [ -n "$PATCH_FILES" ]; then
             echo "{{ _sops_blue }}==> Patch files:{{ _sops_nc }}"
@@ -98,11 +81,24 @@ talos-apply node="" insecure="" mode="":
         else
             echo "{{ _sops_yellow }}==> No patch files found{{ _sops_nc }}"
         fi
-        talosctl apply-config $INSECURE_FLAG $MODE_FLAG --nodes "$NODE_IP" --endpoints "$NODE_IP" \
-            --file "$BASE_CONFIG" \
-            $PATCH_ARGS && \
-        echo "{{ _sops_green }}Configuration applied to {{ node }}{{ _sops_nc }}" || \
-        (echo "{{ _sops_red }}Failed to apply configuration to {{ node }}{{ _sops_nc }}"; exit 1)
+        if talosctl apply-config {{ flags }} --nodes "$NODE_IP" --endpoints "$NODE_IP" \
+            --file "$BASE_CONFIG" $PATCH_ARGS; then
+            echo "{{ _sops_green }}Configuration applied to $node{{ _sops_nc }}"
+        else
+            echo "{{ _sops_red }}Failed to apply configuration to $node{{ _sops_nc }}"
+            return 1
+        fi
+    }
+    if [ -n "{{ nodes }}" ] && [ "{{ nodes }}" != "all" ]; then
+        rc=0
+        IFS=',' read -ra TALOS_NODES <<< "{{ nodes }}"
+        for n in "${TALOS_NODES[@]}"; do
+            n="$(echo "$n" | xargs)"
+            [ -z "$n" ] && continue
+            echo "{{ _sops_blue }}Applying configuration to node: $n{{ _sops_nc }}"
+            apply_node "$n" || rc=1
+        done
+        exit $rc
     else
         echo "{{ _sops_blue }}Applying configurations to all nodes...{{ _sops_nc }}"
         for config in {{ generated_dir }}/control-plane-*.yaml; do
@@ -118,7 +114,7 @@ talos-apply node="" insecure="" mode="":
                         for patch in $PATCH_FILES; do
                             PATCH_ARGS="$PATCH_ARGS --config-patch @$patch"
                         done
-                        talosctl apply-config $INSECURE_FLAG $MODE_FLAG --nodes "$NODE_IP" --endpoints "$NODE_IP" \
+                        talosctl apply-config {{ flags }} --nodes "$NODE_IP" --endpoints "$NODE_IP" \
                             --file "$config" \
                             $PATCH_ARGS && \
                         echo "{{ _sops_green }}Applied to $NODE_NAME{{ _sops_nc }}" || \
@@ -140,7 +136,7 @@ talos-apply node="" insecure="" mode="":
                         for patch in $PATCH_FILES; do
                             PATCH_ARGS="$PATCH_ARGS --config-patch @$patch"
                         done
-                        talosctl apply-config $INSECURE_FLAG $MODE_FLAG --nodes "$NODE_IP" --endpoints "$NODE_IP" \
+                        talosctl apply-config {{ flags }} --nodes "$NODE_IP" --endpoints "$NODE_IP" \
                             --file "$config" \
                             $PATCH_ARGS && \
                         echo "{{ _sops_green }}Applied to $NODE_NAME{{ _sops_nc }}" || \
@@ -153,7 +149,6 @@ talos-apply node="" insecure="" mode="":
     fi
 
 # Bootstrap Kubernetes ([node])
-[arg('node', long='node')]
 [group("talos")]
 talos-bootstrap node="":
     #!/usr/bin/env bash
@@ -190,7 +185,6 @@ talos-bootstrap node="":
 # ============================================================================
 
 # Retrieve kubeconfig ([node])
-[arg('node', long='node')]
 [group("talos")]
 talos-kubeconfig node="":
     #!/usr/bin/env bash
@@ -288,90 +282,56 @@ talos-status: talos-health talos-nodes talos-pods
 # Maintenance
 # ============================================================================
 
-# Upgrade Kubernetes
-[arg('version', long='version')]
+# Upgrade Kubernetes (version; extra flags pass through to talosctl)
 [group("talos")]
-talos-upgrade-k8s version:
+talos-upgrade-k8s version *flags:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "{{ _sops_yellow }}Upgrading Kubernetes to {{ version }}...{{ _sops_nc }}"
-    export TALOSCONFIG="{{ talosconfig }}" && talosctl upgrade-k8s --to "{{ version }}"
+    export TALOSCONFIG="{{ talosconfig }}" && talosctl upgrade-k8s --to "{{ version }}" {{ flags }}
 
-# Upgrade Talos node (node, image or version required)
-[arg('image', long='image')]
-[arg('node', long='node')]
-[arg('version', long='version')]
+# Upgrade Talos node(s) (nodes, comma-separated; + flags, e.g. --image ghcr.io/siderolabs/installer:v1.9.0)
 [group("talos")]
-talos-upgrade node image="" version="":
+talos-upgrade nodes *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -z "{{ image }}" ] && [ -z "{{ version }}" ]; then
-        echo "{{ _sops_red }}Error: image or version required{{ _sops_nc }}"
-        echo "{{ _sops_yellow }}Usage: just talos-upgrade <node> image=<installer-url>{{ _sops_nc }}"
-        echo "{{ _sops_yellow }}   or: just talos-upgrade <node> version=v1.9.0{{ _sops_nc }}"
+    if [ -z "{{ flags }}" ]; then
+        echo "{{ _sops_red }}Error: flags required (e.g. --image <installer-url>){{ _sops_nc }}"
+        echo "{{ _sops_yellow }}Usage: just talos-upgrade <nodes> --image ghcr.io/siderolabs/installer:v1.9.0{{ _sops_nc }}"
         exit 1
     fi
-    UPGRADE_IMAGE="{{ image }}"
-    if [ -z "$UPGRADE_IMAGE" ]; then
-        UPGRADE_IMAGE="ghcr.io/siderolabs/installer:{{ version }}"
-    fi
-    echo "{{ _sops_yellow }}Upgrading Talos on {{ node }} with image: $UPGRADE_IMAGE{{ _sops_nc }}"
+    echo "{{ _sops_yellow }}Upgrading Talos on {{ nodes }} ({{ flags }})...{{ _sops_nc }}"
     export TALOSCONFIG="{{ talosconfig }}" && \
-        talosctl upgrade --nodes "{{ node }}" --image "$UPGRADE_IMAGE" --preserve
+        talosctl upgrade --nodes "{{ nodes }}" {{ flags }} --preserve
 
-# Open Talos dashboard
-[arg('insecure', long='insecure')]
-[arg('node', long='node')]
+# Open Talos dashboard (nodes, comma-separated; + flags, e.g. --insecure)
 [group("talos")]
-talos-dashboard node insecure="":
+talos-dashboard nodes *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSECURE_FLAG=""
-    if [ "{{ insecure }}" = "true" ]; then
-        INSECURE_FLAG="--insecure"
-    fi
-    export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" dashboard
+    export TALOSCONFIG="{{ talosconfig }}" && talosctl {{ flags }} -n "{{ nodes }}" dashboard
 
-# View node logs
-[arg('insecure', long='insecure')]
-[arg('node', long='node')]
-[arg('service', long='service')]
+# View node logs (nodes, comma-separated; service; + flags, e.g. --insecure)
 [group("talos")]
-talos-logs node service insecure="":
+talos-logs nodes service *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSECURE_FLAG=""
-    if [ "{{ insecure }}" = "true" ]; then
-        INSECURE_FLAG="--insecure"
-    fi
-    export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" logs "{{ service }}"
+    export TALOSCONFIG="{{ talosconfig }}" && talosctl {{ flags }} -n "{{ nodes }}" logs "{{ service }}"
 
-# Reboot a Talos node
-[arg('insecure', long='insecure')]
-[arg('node', long='node')]
+# Reboot Talos node(s) (nodes, comma-separated; + flags, e.g. --insecure)
 [group("talos")]
-talos-reboot node insecure="":
+talos-reboot nodes *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "{{ _sops_yellow }}Rebooting node {{ node }}...{{ _sops_nc }}"
-    INSECURE_FLAG=""
-    if [ "{{ insecure }}" = "true" ]; then
-        INSECURE_FLAG="--insecure"
-    fi
-    export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" reboot
+    echo "{{ _sops_yellow }}Rebooting node(s) {{ nodes }}...{{ _sops_nc }}"
+    export TALOSCONFIG="{{ talosconfig }}" && talosctl {{ flags }} -n "{{ nodes }}" reboot
 
-# Reset a Talos node (destructive)
-[arg('insecure', long='insecure')]
-[arg('node', long='node')]
+# Reset Talos node(s) (destructive; nodes, comma-separated; + flags, e.g. --insecure)
 [group("talos")]
-talos-reset node insecure="":
+talos-reset nodes *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "{{ _sops_red }}WARNING: This will wipe the node at {{ node }}!{{ _sops_nc }}"
+    echo "{{ _sops_red }}WARNING: This will wipe the node(s) at {{ nodes }}!{{ _sops_nc }}"
     printf "Press Enter to continue or Ctrl+C to cancel: "
     read -r confirm
-    INSECURE_FLAG=""
-    if [ "{{ insecure }}" = "true" ]; then
-        INSECURE_FLAG="--insecure"
-    fi
-    export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" reset --graceful=false --reboot
+    export TALOSCONFIG="{{ talosconfig }}" && talosctl {{ flags }} -n "{{ nodes }}" reset --graceful=false --reboot
