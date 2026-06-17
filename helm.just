@@ -52,6 +52,8 @@ helm-check-deps:
 # ============================================================================
 
 # Add a Helm repository
+[arg('repo', long='repo')]
+[arg('url', long='url')]
 [group("helm")]
 helm-repo-add repo url: helm-check-deps
     #!/usr/bin/env bash
@@ -81,6 +83,10 @@ helm-repo-list: helm-check-deps
 # ============================================================================
 
 # Install/upgrade a Helm chart (chart values [ns] [version])
+[arg('chart', long='chart')]
+[arg('ns', long='ns')]
+[arg('values', long='values')]
+[arg('version', long='version')]
 [group("helm")]
 helm-install chart values ns="" version="": helm-check-deps
     #!/usr/bin/env bash
@@ -142,11 +148,17 @@ helm-install chart values ns="" version="": helm-check-deps
     (echo "{{ _sops_red }}Chart installation failed{{ _sops_nc }}"; exit 1)
 
 # Upgrade a Helm release (alias for helm-install)
+[arg('chart', long='chart')]
+[arg('ns', long='ns')]
+[arg('values', long='values')]
+[arg('version', long='version')]
 [group("helm")]
 helm-upgrade chart values ns="" version="": helm-check-deps
     @just helm-install "{{ chart }}" "{{ values }}" "{{ ns }}" "{{ version }}"
 
 # Uninstall a Helm release
+[arg('ns', long='ns')]
+[arg('release', long='release')]
 [group("helm")]
 helm-uninstall release ns="": helm-check-deps
     #!/usr/bin/env bash
@@ -159,6 +171,9 @@ helm-uninstall release ns="": helm-check-deps
     (echo "{{ _sops_red }}Uninstall failed{{ _sops_nc }}"; exit 1)
 
 # Rollback a Helm release
+[arg('ns', long='ns')]
+[arg('release', long='release')]
+[arg('revision', long='revision')]
 [group("helm")]
 helm-rollback release ns="" revision="0": helm-check-deps
     #!/usr/bin/env bash
@@ -175,6 +190,7 @@ helm-rollback release ns="" revision="0": helm-check-deps
 # ============================================================================
 
 # List installed Helm releases ([ns])
+[arg('ns', long='ns')]
 [group("helm")]
 helm-list ns="all": helm-check-deps
     #!/usr/bin/env bash
@@ -189,6 +205,8 @@ helm-list ns="all": helm-check-deps
     fi
 
 # Show status of a Helm release
+[arg('ns', long='ns')]
+[arg('release', long='release')]
 [group("helm")]
 helm-status release ns="": helm-check-deps
     #!/usr/bin/env bash
@@ -199,6 +217,8 @@ helm-status release ns="": helm-check-deps
     helm status "{{ release }}" --namespace "$NAMESPACE"
 
 # Show release history
+[arg('ns', long='ns')]
+[arg('release', long='release')]
 [group("helm")]
 helm-history release ns="": helm-check-deps
     #!/usr/bin/env bash
@@ -209,6 +229,8 @@ helm-history release ns="": helm-check-deps
     helm history "{{ release }}" --namespace "$NAMESPACE"
 
 # Show values of a Helm release
+[arg('ns', long='ns')]
+[arg('release', long='release')]
 [group("helm")]
 helm-values release ns="": helm-check-deps
     #!/usr/bin/env bash
@@ -222,12 +244,14 @@ helm-values release ns="": helm-check-deps
 # ============================================================================
 
 # Search for Helm charts
+[arg('query', long='query')]
 [group("helm")]
 helm-search query: helm-check-deps
     @echo "{{ _sops_blue }}Searching for: {{ query }}{{ _sops_nc }}"
     @helm search repo "{{ query }}"
 
 # Show default values for a chart
+[arg('chart', long='chart')]
 [group("helm")]
 helm-show-values chart: helm-check-deps
     @helm show values "{{ chart }}"

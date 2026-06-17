@@ -310,6 +310,7 @@ sops-init-config: sops-check-deps
     echo "  2. {{ _sops_bold }}Never{{ _sops_nc }} commit private key to Git"
 
 # Import existing age key
+[arg('age_key_file', long='age_key_file')]
 [group("sops")]
 sops-import-key age_key_file: sops-check-deps
     #!/usr/bin/env bash
@@ -402,6 +403,7 @@ sops-rotate-key: sops-check-deps sops-check-config
 # ============================================================================
 
 # Encrypt file in-place
+[arg('file', long='file')]
 [group("sops")]
 sops-encrypt file: sops-check-deps sops-check-config
     #!/usr/bin/env bash
@@ -424,6 +426,7 @@ sops-encrypt file: sops-check-deps sops-check-config
     echo "{{ _sops_green }}Encrypted: {{ file }}{{ _sops_nc }}"
 
 # Decrypt file to stdout
+[arg('file', long='file')]
 [group("sops")]
 sops-decrypt file: sops-check-deps
     #!/usr/bin/env bash
@@ -435,6 +438,7 @@ sops-decrypt file: sops-check-deps
     SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops --decrypt "{{ file }}"
 
 # Edit encrypted file
+[arg('file', long='file')]
 [group("sops")]
 sops-edit file: sops-check-deps
     #!/usr/bin/env bash
@@ -446,6 +450,7 @@ sops-edit file: sops-check-deps
     EDITOR="{{ sops_editor }}" SOPS_AGE_KEY_FILE="{{ sops_age_key_file }}" sops "{{ file }}"
 
 # Re-encrypt file with current config
+[arg('file', long='file')]
 [group("sops")]
 sops-rekey file: sops-check-deps sops-check-config
     #!/usr/bin/env bash

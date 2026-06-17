@@ -30,6 +30,9 @@ talos_wait_timeout := env("TALOS_WAIT_TIMEOUT", "10m")
 # ============================================================================
 
 # Apply Talos configs ([node] [insecure] [mode])
+[arg('insecure', long='insecure')]
+[arg('mode', long='mode')]
+[arg('node', long='node')]
 [group("talos")]
 talos-apply node="" insecure="" mode="":
     #!/usr/bin/env bash
@@ -150,6 +153,7 @@ talos-apply node="" insecure="" mode="":
     fi
 
 # Bootstrap Kubernetes ([node])
+[arg('node', long='node')]
 [group("talos")]
 talos-bootstrap node="":
     #!/usr/bin/env bash
@@ -186,6 +190,7 @@ talos-bootstrap node="":
 # ============================================================================
 
 # Retrieve kubeconfig ([node])
+[arg('node', long='node')]
 [group("talos")]
 talos-kubeconfig node="":
     #!/usr/bin/env bash
@@ -284,6 +289,7 @@ talos-status: talos-health talos-nodes talos-pods
 # ============================================================================
 
 # Upgrade Kubernetes
+[arg('version', long='version')]
 [group("talos")]
 talos-upgrade-k8s version:
     #!/usr/bin/env bash
@@ -292,6 +298,9 @@ talos-upgrade-k8s version:
     export TALOSCONFIG="{{ talosconfig }}" && talosctl upgrade-k8s --to "{{ version }}"
 
 # Upgrade Talos node (node, image or version required)
+[arg('image', long='image')]
+[arg('node', long='node')]
+[arg('version', long='version')]
 [group("talos")]
 talos-upgrade node image="" version="":
     #!/usr/bin/env bash
@@ -311,6 +320,8 @@ talos-upgrade node image="" version="":
         talosctl upgrade --nodes "{{ node }}" --image "$UPGRADE_IMAGE" --preserve
 
 # Open Talos dashboard
+[arg('insecure', long='insecure')]
+[arg('node', long='node')]
 [group("talos")]
 talos-dashboard node insecure="":
     #!/usr/bin/env bash
@@ -322,6 +333,9 @@ talos-dashboard node insecure="":
     export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" dashboard
 
 # View node logs
+[arg('insecure', long='insecure')]
+[arg('node', long='node')]
+[arg('service', long='service')]
 [group("talos")]
 talos-logs node service insecure="":
     #!/usr/bin/env bash
@@ -333,6 +347,8 @@ talos-logs node service insecure="":
     export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" logs "{{ service }}"
 
 # Reboot a Talos node
+[arg('insecure', long='insecure')]
+[arg('node', long='node')]
 [group("talos")]
 talos-reboot node insecure="":
     #!/usr/bin/env bash
@@ -345,6 +361,8 @@ talos-reboot node insecure="":
     export TALOSCONFIG="{{ talosconfig }}" && talosctl $INSECURE_FLAG -n "{{ node }}" reboot
 
 # Reset a Talos node (destructive)
+[arg('insecure', long='insecure')]
+[arg('node', long='node')]
 [group("talos")]
 talos-reset node insecure="":
     #!/usr/bin/env bash
