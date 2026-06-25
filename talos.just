@@ -290,19 +290,53 @@ talos-upgrade-k8s version *flags:
     echo "{{ _sops_yellow }}Upgrading Kubernetes to {{ version }}...{{ _sops_nc }}"
     export TALOSCONFIG="{{ talosconfig }}" && talosctl upgrade-k8s --to "{{ version }}" {{ flags }}
 
-# Upgrade Talos node(s) (nodes, comma-separated; + flags, e.g. --image ghcr.io/siderolabs/installer:v1.9.0)
+# Upgrade Talos node(s) (short names or IPs, comma-separated; + flags, e.g. --image factory.talos.dev/metal-installer/<id>:v1.9.0)
 [group("talos")]
 talos-upgrade nodes *flags:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -z "{{ flags }}" ]; then
         echo "{{ _sops_red }}Error: flags required (e.g. --image <installer-url>){{ _sops_nc }}"
-        echo "{{ _sops_yellow }}Usage: just talos-upgrade <nodes> --image ghcr.io/siderolabs/installer:v1.9.0{{ _sops_nc }}"
+        echo "{{ _sops_yellow }}Usage: just talos-upgrade <nodes> --image factory.talos.dev/metal-installer/<id>:v1.9.0{{ _sops_nc }}"
+        echo "{{ _sops_yellow }}Tip: kexec reboots can be unreliable on some hardware; add --reboot-mode=powercycle if the node does not restart.{{ _sops_nc }}"
         exit 1
     fi
-    echo "{{ _sops_yellow }}Upgrading Talos on {{ nodes }} ({{ flags }})...{{ _sops_nc }}"
-    export TALOSCONFIG="{{ talosconfig }}" && \
-        talosctl upgrade --nodes "{{ nodes }}" {{ flags }} --preserve
+    export TALOSCONFIG="{{ talosconfig }}"
+    # Resolve a node short name to its Tailscale IP via terraform output.
+    # Literal IPv4/IPv6 addresses are passed through unchanged. Workers cannot
+    # forward requests for other nodes, so each node is targeted directly with
+    # its own address as both endpoint and node.
+    resolve_ip() {
+        local node="$1" ip key
+        if echo "$node" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$|:'; then
+            echo "$node"; return 0
+        fi
+        for key in worker control_plane; do
+            ip=$(terraform output -json generated_configs 2>/dev/null | jq -r ".[\"$key\"][\"$node\"].tailscale_ipv4 // empty" 2>/dev/null || true)
+            if [ -n "$ip" ]; then echo "$ip"; return 0; fi
+        done
+        return 1
+    }
+    rc=0
+    IFS=',' read -ra TALOS_NODES <<< "{{ nodes }}"
+    for n in "${TALOS_NODES[@]}"; do
+        n="$(echo "$n" | xargs)"
+        [ -z "$n" ] && continue
+        if ! NODE_IP="$(resolve_ip "$n")"; then
+            echo "{{ _sops_red }}Error: could not resolve Tailscale IP for node '$n'{{ _sops_nc }}"
+            echo "{{ _sops_yellow }}Available nodes:{{ _sops_nc }}"
+            terraform output -json generated_configs 2>/dev/null | jq -r '(.control_plane // {}), (.worker // {}) | keys[]' 2>/dev/null | sort -u | sed 's/^/  /'
+            rc=1; continue
+        fi
+        echo "{{ _sops_yellow }}Upgrading Talos on $n ($NODE_IP) ({{ flags }})...{{ _sops_nc }}"
+        if talosctl upgrade -e "$NODE_IP" -n "$NODE_IP" {{ flags }} --preserve; then
+            echo "{{ _sops_green }}Upgrade triggered on $n{{ _sops_nc }}"
+        else
+            echo "{{ _sops_red }}Upgrade failed on $n{{ _sops_nc }}"
+            rc=1
+        fi
+    done
+    exit $rc
 
 # Open Talos dashboard (nodes, comma-separated; + flags, e.g. --insecure)
 [group("talos")]
